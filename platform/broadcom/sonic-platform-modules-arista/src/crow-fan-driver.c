@@ -15,6 +15,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/i2c.h>
 #include <linux/device.h>
 #include <linux/hwmon.h>
@@ -35,6 +36,9 @@
 #define TACH4LOWREG 6
 #define TACH4HIGHREG 7
 
+#define FAN_PWM_BASE 0x10
+#define FAN_PWM_REG(Num) (FAN_PWM_BASE + (Num))
+
 #define FAN1PWMREG 0x10
 #define FAN1IDREG 0x18
 #define FAN2PWMREG 0x11
@@ -54,6 +58,12 @@
 #define FAN_LED_GREEN 1
 #define FAN_LED_RED 2
 #define FAN_LED_YELLOW 3
+
+#define FAN_MAX_PWM 255
+
+static bool safe_mode = true;
+module_param(safe_mode, bool, S_IRUSR | S_IWUSR);
+MODULE_PARM_DESC(safe_mode, "force fan speed to 100% during probe");
 
 struct crow_led {
     char name[LED_NAME_MAX_SZ];
@@ -438,14 +448,37 @@ static int leds_init(struct crow_led *leds, struct i2c_client *client)
     // fan leds initialized to green because no fan fault reg on crow
     for (i = 0 ; i < NUM_FANS; i++) {
         err = led_classdev_register(&client->dev, &leds[i].cdev);
-        err |= write_led_color(&client->dev, FAN_LED_GREEN, i);
         if (err) {
-            leds_unregister(data, i);
-            return err;
+            dev_err(&client->dev, "failed to register led fan%d", i);
+            goto fail;
+        }
+        err = write_led_color(&client->dev, FAN_LED_GREEN, i);
+        if (err) {
+            dev_err(&client->dev, "failed to set led fan%d", i);
+            // this is not considered as a critical error, fans are more important
         }
     }
 
     return 0;
+
+fail:
+    for (; i >= 0; i--) {
+        leds_unregister(data, i);
+    }
+    return err;
+}
+
+void crow_print_version(struct i2c_client *client)
+{
+    char version;
+    int err;
+
+    err = read_cpld(&client->dev, CROWCPLDREVREG, &version);
+    if (err) {
+       dev_warn(&client->dev, "failed to obtain CPLD version");
+    } else {
+       dev_info(&client->dev, "CPLD version 0x%02x", version);
+    }
 }
 
 static int crow_cpld_remove(struct i2c_client *client)
@@ -457,6 +490,16 @@ static int crow_cpld_remove(struct i2c_client *client)
     return 0;
 }
 
+static void crow_force_fan_speed(struct i2c_client *client, u8 pwm)
+{
+   int i;
+
+   dev_info(&client->dev, "forcing fan speed to %hhu (safe_mode)", pwm);
+   for (i = 0; i < NUM_FANS; i++) {
+      write_cpld(&client->dev, FAN_PWM_REG(i), pwm);
+   }
+}
+
 static int crow_cpld_probe(struct i2c_client *client,
                            const struct i2c_device_id *id)
 {
@@ -464,6 +507,7 @@ static int crow_cpld_probe(struct i2c_client *client,
     struct device *dev = &client->dev;
     struct device *hwmon_dev;
     struct crow_cpld_data *data;
+
     data = devm_kzalloc(dev, sizeof(struct crow_cpld_data), GFP_KERNEL);
     if (!data)
         return -ENOMEM;
@@ -474,6 +518,11 @@ static int crow_cpld_probe(struct i2c_client *client,
                                                        data, fan_groups);
     if (IS_ERR(hwmon_dev))
         return PTR_ERR(hwmon_dev);
+
+    crow_print_version(client);
+
+    if (safe_mode)
+       crow_force_fan_speed(client, FAN_MAX_PWM);
 
     err = leds_init(data->leds, client);
     if (err)
