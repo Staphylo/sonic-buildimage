@@ -217,8 +217,8 @@ EOF
 }
 
 platform_specific() {
-    local platform="$(grep -Eo 'platform=[^ ]+' "$cmdline_base" | cut -f2 -d=)"
-    local sid="$(grep -Eo 'sid=[^ ]+' "$cmdline_base" | cut -f2 -d=)"
+    local platform="$(sed -nr 's/.*platform=([^ ]+).*/\1/p' "$cmdline_base")"
+    local sid="$(sed -nr 's/.*sid=([^ ]+).*/\1/p' "$cmdline_base" | sed 's/Ssd$//')"
 
     # set varlog size to 100MB
     local varlog_size=100
@@ -237,17 +237,16 @@ platform_specific() {
         flash_size=3700
         echo "modprobe.blacklist=radeon,sp5100_tco" >>/tmp/append
     fi
-    if [ "$sid" = "Upperlake" ] || [ "$sid" = "UpperlakeES" ] ||
-       [ "$sid" = "UpperlakeSsd" ]; then
+    if [ "$sid" = "Upperlake" ] || [ "$sid" = "UpperlakeES" ]; then
         aboot_machine=arista_7060_cx32s
         flash_size=3700
         echo "amd_iommu=off" >> /tmp/append
     fi
-    if [ "$sid" = "Gardena" ] || [ "$sid" = "GardenaSsd" ]; then
+    if [ "$sid" = "Gardena" ] || [ "$sid" = "GardenaE" ]; then
         aboot_machine=arista_7260cx3_64
         flash_size=28000
     fi
-    if [ "$sid" = "Alhambra" ] || [ "$sid" = "AlhambraSsd" ]; then
+    if [ "$sid" = "Alhambra" ]; then
         aboot_machine=arista_7170_64c
         flash_size=28000
         echo "hugepages=128" >> /tmp/append
@@ -260,15 +259,15 @@ platform_specific() {
         aboot_machine=arista_7060dx4_32
         flash_size=28000
     fi
-    if [ "$sid" = "Smartsville" ] || [ "$sid" = "SmartsvilleSsd" ]; then
+    if [ "$sid" = "Smartsville" ]; then
         aboot_machine=arista_7280cr3_32p4
         flash_size=7382
     fi
-    if [ "$sid" = "SmartsvilleBK" ] || [ "$sid" = "SmartsvilleBKSsd" ]; then
+    if [ "$sid" = "SmartsvilleBK" ]; then
         aboot_machine=arista_7280cr3k_32p4
         flash_size=7382
     fi
-    if [ "$sid" = "SmartsvilleDD" ] || [ "$sid" = "SmartsvilleDDSsd" ]; then
+    if [ "$sid" = "SmartsvilleDD" ]; then
         aboot_machine=arista_7280cr3_32d4
         flash_size=7382
     fi
